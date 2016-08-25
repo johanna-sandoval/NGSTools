@@ -1,0 +1,84 @@
+```{r preparation, results="hide",echo=F,message=F,warning=F}
+### DEFINED OUTSIDE
+# report_dir
+# source_dir
+# log_files
+
+
+library(rmarkdown)
+library(knitr)
+library(hwriter)
+library(magrittr)
+options(stringsAsFactors=F)
+
+# job_output/edgerProcessAmplicons/edgerProcessAmplicons.*_2016-08-23T11.23.25.o
+
+# Directories and cp data
+flist <- unlist(lapply(strsplit(source_dir,",",fixed=T), function(x) list.files(x, "(samples|counts).csv$", full.names = T, recursive=F)))
+dir.create( file.path(report_dir), showWarnings=F,recursive=T)
+
+table.links=data.frame(library=NULL, Raw.Read.Counts=NULL, Sample.Counts=NULL)
+for (r_dir in unique(unlist(lapply(flist,dirname)))){
+    dir.create( file.path(report_dir,r_dir), showWarnings=F,recursive=T)
+    file.copy(file.path(r_dir,"counts.csv"), file.path(report_dir,r_dir), overwrite = T)    
+    file.copy(file.path(r_dir,"samples.csv"), file.path(report_dir,r_dir), overwrite = T)    
+    table.links=rbind(table.links,data.frame(library=r_dir, Raw.Read.Counts=paste0("[counts](",file.path(r_dir,"counts.csv"),")"), Sample.Counts=paste0("[samples](",file.path(r_dir,"samples.csv"),")")))
+}
+
+# Read samples and logs
+# Create results tables
+counts.results=data.frame(NULL)
+for (fi in flist){
+    if (length(grep("samples.csv$",fi))>0){
+    sample = file.path(fi) %>% read.delim(header=T,check.names=F,stringsAsFactors=F,sep=",")    
+    counts.results = rbind(counts.results, cbind(fileID=fi, sample))        
+    }
+}
+write.csv(counts.results,file.path(report_dir,"samples.matrix.csv"), quote=F,row.names=F)
+
+# Read results logs
+logs.files=unlist(strsplit(log_files,",",fixed=T))
+logs.content=lapply(logs.files,readLines) 
+names(logs.content)=logs.files
+logs=data.frame(
+library=gsub("job_output/edgerProcessAmplicons/edgerProcessAmplicons.", "logs.files", logs.files ,fixed=T),    
+total.reads=unlist(lapply(logs.content, function(x) paste(x[grep('Total number of read is',x)],collapse="\n", sep=""))),
+total.matches=unlist(lapply(logs.content, function(x) paste(x[grep('There are [0-9]* reads',x)],collapse="\n", sep=""))),
+parameters=unlist(lapply(logs.content, function(x) paste(x[grep('-- .*',x)],collapse="\n", sep="")))
+)
+rownames(logs)=logs.files
+
+```
+## Analysis of genetic mutation using single guide RNA (sgRNA) or short hairpin RNA (shRNA)
+
+The open-source processing pipeline in edgeR provides a complete analysis solution for screen data, that begins with the raw sequence reads and ends with a ranked list of candidate genes for downstream biological validation. 
+Raw data contained in a fastq file is summarized into a matrix of counts (samples in the columns, genes in the rows) with options for allowing mismatches and small shifts in sequence position. 
+
+This approach assumes fixed structure of amplicon sequences (i.e. both the sample specific index sequences and hairpin/sgRNA sequences can be found at particular locations within each read). As samples were demultiplexed, a barcode per sample was
+syntetically added at the begining of the read (position1 to 8)
+
+
+### Analysis Results
+
+```{r counts.results, results='asis', echo=F,message=F,warning=F}
+print(kable(counts.results, row.names=F, caption=paste("<br>","Matrix of Raw Read Counts per library",  
+                                                              " [download full table](samples.matrix.csv)",sep=""), 
+        padding = 10))        
+```
+
+```{r table.links, results='asis', echo=F,message=F,warning=F}
+print(kable(table.links, row.names=T, caption=paste("<br>","Links to the Matrix of Raw Read Counts and Total barcode counts per library")                                                     
+                                                       ,padding = 10))        
+        
+```
+
+### Parameters and logs
+
+```{r logs, results='asis', echo=F,message=F,warning=F}
+print(kable(logs[1,"parameters"], row.names=F, caption=paste("<br>","Parameters"),padding = 10))
+for (l in 1:nrow(logs)){    
+    print(kable(NULL, row.names=F, caption=paste("<br>","Library: ", logs.files[l]),padding = 20))
+    print(kable(logs[l,"total.reads"], row.names=F, caption=paste("<br>","Total number of reads"),padding = 10))
+    print(kable(logs[l,"total.matches"], row.names=F, caption=paste("<br>","Total number of matches"),padding = 10))
+}    
+```
